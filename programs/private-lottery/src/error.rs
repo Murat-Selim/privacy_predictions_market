@@ -22,4 +22,6 @@ pub enum LotteryError {
     NotWinner,
     #[msg("Unauthorized")]
     Unauthorized,
+    #[msg("No funds in vault")]
+    NoFunds,
 }

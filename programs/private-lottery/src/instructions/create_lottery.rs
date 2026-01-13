@@ -30,6 +30,7 @@ pub fn handler(ctx: Context<CreateLottery>, lottery_id: u64, ticket_price: u64) 
     lottery.ticket_price = ticket_price;
     lottery.participant_count = 0;
     lottery.is_open = true;
+    lottery.prize_claimed = false;
     lottery.winning_number_handle = 0;
     lottery.bump = ctx.bumps.lottery;
 

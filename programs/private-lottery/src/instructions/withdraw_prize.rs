@@ -11,43 +11,47 @@ use crate::error::LotteryError;
 pub struct WithdrawPrize<'info> {
     #[account(mut)]
     pub winner: Signer<'info>,
-    
+
+    #[account(mut)]
     pub lottery: Account<'info, Lottery>,
-    
+
     #[account(mut)]
     pub ticket: Account<'info, Ticket>,
-    
+
     /// CHECK: vault PDA - we need the bump to sign
     #[account(
-        mut, 
-        seeds = [b"vault", lottery.key().as_ref()], 
+        mut,
+        seeds = [b"vault", lottery.key().as_ref()],
         bump
     )]
     pub vault: AccountInfo<'info>,
-    
+
     /// CHECK: Instructions sysvar for Ed25519 signature verification
     #[account(address = anchor_lang::solana_program::sysvar::instructions::ID)]
     pub instructions: AccountInfo<'info>,
-    
+
     pub system_program: Program<'info, System>,
-    
+
     #[account(address = INCO_LIGHTNING_ID)]
     pub inco_lightning_program: Program<'info, IncoLightning>,
 }
 
+/// Withdraw prize by proving winner status via is_winner_handle decryption
+/// First-come-first-serve: first verified winner takes the vault
 pub fn handler(
-    ctx: Context<WithdrawPrize>, 
+    ctx: Context<WithdrawPrize>,
     handle: Vec<u8>,
     plaintext: Vec<u8>,
 ) -> Result<()> {
-    let ticket = &ctx.accounts.ticket;
-    let lottery = &ctx.accounts.lottery;
-    
-    require!(ticket.owner == ctx.accounts.winner.key(), LotteryError::NotOwner);
-    require!(ticket.claimed, LotteryError::NotClaimed);
-    require!(ticket.prize_handle != 0, LotteryError::NotChecked);
+    let ticket = &mut ctx.accounts.ticket;
+    let lottery = &mut ctx.accounts.lottery;
 
-    // Verify the decryption signature on-chain
+    require!(ticket.owner == ctx.accounts.winner.key(), LotteryError::NotOwner);
+    require!(ticket.is_winner_handle != 0, LotteryError::NotChecked);
+    require!(!ticket.claimed, LotteryError::AlreadyClaimed);
+    require!(!lottery.prize_claimed, LotteryError::AlreadyClaimed);
+
+    // Verify the decryption signature on-chain for is_winner_handle
     let cpi_ctx = CpiContext::new(
         ctx.accounts.inco_lightning_program.to_account_info(),
         VerifySignature {
@@ -63,15 +67,20 @@ pub fn handler(
         Some(vec![plaintext.clone()]),
     )?;
 
-    // Parse the verified plaintext to get prize amount
-    let prize_amount = parse_plaintext_to_u64(&plaintext)?;
-    
-    require!(prize_amount > 0, LotteryError::NotWinner);
+    // Parse the verified plaintext - should be non-zero for winner
+    msg!("Plaintext bytes: {:?}", plaintext);
+    let is_winner = parse_plaintext_to_bool(&plaintext)?;
+    msg!("Parsed is_winner: {}", is_winner);
+    require!(is_winner, LotteryError::NotWinner);
 
-    // Transfer prize from vault PDA to winner
-    let available = ctx.accounts.vault.lamports();
-    let prize = available.min(prize_amount);
-    
+    // Mark as claimed to prevent double-withdraw
+    ticket.claimed = true;
+    lottery.prize_claimed = true;
+
+    // Transfer entire vault to winner (first-come-first-serve)
+    let prize = ctx.accounts.vault.lamports();
+    require!(prize > 0, LotteryError::NoFunds);
+
     // Use invoke_signed with vault PDA seeds
     let lottery_key = lottery.key();
     let vault_seeds: &[&[u8]] = &[
@@ -79,7 +88,7 @@ pub fn handler(
         lottery_key.as_ref(),
         &[ctx.bumps.vault],
     ];
-    
+
     anchor_lang::solana_program::program::invoke_signed(
         &anchor_lang::solana_program::system_instruction::transfer(
             &ctx.accounts.vault.key(),
@@ -98,13 +107,25 @@ pub fn handler(
     Ok(())
 }
 
-fn parse_plaintext_to_u64(plaintext: &[u8]) -> Result<u64> {
-    if plaintext.len() < 8 {
-        let mut bytes = [0u8; 8];
-        bytes[..plaintext.len()].copy_from_slice(plaintext);
-        Ok(u64::from_le_bytes(bytes))
-    } else {
-        let bytes: [u8; 8] = plaintext[..8].try_into().unwrap();
-        Ok(u64::from_le_bytes(bytes))
+/// Parse decrypted boolean plaintext
+/// Handles multiple formats: raw bytes (u128 LE), single byte, or string "0"/"1"
+fn parse_plaintext_to_bool(plaintext: &[u8]) -> Result<bool> {
+    if plaintext.is_empty() {
+        return Ok(false);
     }
+
+    // Check if any byte is non-zero (handles u128 LE format where 1 = [1,0,0,0,...])
+    let any_nonzero = plaintext.iter().any(|&b| b != 0 && b != b'0');
+
+    // Also check for string "0" which should be false
+    if let Ok(s) = std::str::from_utf8(plaintext) {
+        if s == "0" || s == "false" {
+            return Ok(false);
+        }
+        if s == "1" || s == "true" {
+            return Ok(true);
+        }
+    }
+
+    Ok(any_nonzero)
 }

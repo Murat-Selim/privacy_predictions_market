@@ -9,7 +9,7 @@ pub mod state;
 
 use instructions::*;
 
-declare_id!("BoGG6xcmbV8HpsEA2qHs6pNUS5h5SfmNRvekf2g17PjB");
+declare_id!("6fQ5w1YWBShrFZGepxt1tBSDtobJgXPsYGpG4GstmfzF");
 
 #[program]
 pub mod private_lottery {
@@ -26,23 +26,20 @@ pub mod private_lottery {
         instructions::buy_ticket::handler(ctx, encrypted_guess)
     }
 
+    /// Draw a random winning number (1-100) using on-chain randomness
     pub fn draw_winner<'info>(
         ctx: Context<'_, '_, '_, 'info, DrawWinner<'info>>,
-        encrypted_winning_number: Vec<u8>,
     ) -> Result<()> {
-        instructions::draw_winner::handler(ctx, encrypted_winning_number)
+        instructions::draw_winner::handler(ctx)
     }
 
     pub fn check_winner<'info>(ctx: Context<'_, '_, '_, 'info, CheckWinner<'info>>) -> Result<()> {
         instructions::check_winner::handler(ctx)
     }
 
-    pub fn claim_prize<'info>(ctx: Context<'_, '_, '_, 'info, ClaimPrize<'info>>) -> Result<()> {
-        instructions::claim_prize::handler(ctx)
-    }
-
+    /// Withdraw prize by proving winner status (is_winner_handle decryption)
     pub fn withdraw_prize(
-        ctx: Context<WithdrawPrize>, 
+        ctx: Context<WithdrawPrize>,
         handle: Vec<u8>,
         plaintext: Vec<u8>,
     ) -> Result<()> {

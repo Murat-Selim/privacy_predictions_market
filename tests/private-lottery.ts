@@ -5,7 +5,7 @@ import { PublicKey, Keypair, SystemProgram, Connection, SYSVAR_INSTRUCTIONS_PUBK
 import nacl from "tweetnacl";
 import { encryptValue } from "@inco/solana-sdk/encryption";
 import { decrypt } from "@inco/solana-sdk/attested-decrypt";
-import { hexToBuffer, handleToBuffer, plaintextToBuffer } from "@inco/solana-sdk/utils";
+import { handleToBuffer, plaintextToBuffer, hexToBuffer } from "@inco/solana-sdk/utils";
 
 const INCO_LIGHTNING_PROGRAM_ID = new PublicKey("5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj");
 
@@ -18,24 +18,23 @@ describe("private-lottery", () => {
 
   const program = anchor.workspace.privateLottery as Program<PrivateLottery>;
   let wallet: Keypair;
-  
+
   const lotteryId = Math.floor(Date.now() / 1000);
   const TICKET_PRICE = 10_000_000; // 0.01 SOL
-  
-  // The game: guess 1-100, exact match wins!
+
+  // The game: guess 1-100, winning number is random!
   const MY_GUESS = 42;
-  const WINNING_NUMBER = 42; // Authority's secret number
-  
+
   let lotteryPda: PublicKey;
   let vaultPda: PublicKey;
   let ticketPda: PublicKey;
 
   before(() => {
     wallet = (provider.wallet as any).payer as Keypair;
-    
+
     const idBuffer = Buffer.alloc(8);
     idBuffer.writeBigUInt64LE(BigInt(lotteryId));
-    
+
     [lotteryPda] = PublicKey.findProgramAddressSync([Buffer.from("lottery"), idBuffer], program.programId);
     [vaultPda] = PublicKey.findProgramAddressSync([Buffer.from("vault"), lotteryPda.toBuffer()], program.programId);
     [ticketPda] = PublicKey.findProgramAddressSync([Buffer.from("ticket"), lotteryPda.toBuffer(), wallet.publicKey.toBuffer()], program.programId);
@@ -85,7 +84,7 @@ describe("private-lottery", () => {
         systemProgram: SystemProgram.programId,
       } as any)
       .rpc();
-    
+
     console.log("Lottery created:", tx);
     console.log("   Guess a number 1-100!");
   });
@@ -93,7 +92,7 @@ describe("private-lottery", () => {
   it("2. Buy ticket with encrypted guess", async () => {
     console.log("   My guess:", MY_GUESS, "(encrypted, nobody sees this!)");
     const encryptedGuess = await encryptValue(BigInt(MY_GUESS));
-    
+
     const tx = await program.methods
       .buyTicket(hexToBuffer(encryptedGuess))
       .accounts({
@@ -105,16 +104,14 @@ describe("private-lottery", () => {
         incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
       } as any)
       .rpc();
-    
+
     console.log("Ticket bought:", tx);
   });
 
-  it("3. Authority sets winning number", async () => {
-    console.log("   Winning number:", WINNING_NUMBER, "(encrypted, nobody sees!)");
-    const encryptedWinning = await encryptValue(BigInt(WINNING_NUMBER));
-    
+  it("3. Draw random winning number (e_rand)", async () => {
+    // Now uses e_rand - no one can cheat!
     const tx = await program.methods
-      .drawWinner(hexToBuffer(encryptedWinning))
+      .drawWinner()
       .accounts({
         authority: wallet.publicKey,
         lottery: lotteryPda,
@@ -122,8 +119,9 @@ describe("private-lottery", () => {
         incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
       } as any)
       .rpc();
-    
-    console.log("Winning number set:", tx);
+
+    console.log("Random winning number drawn:", tx);
+    console.log("   (Encrypted random 1-100 - nobody knows, not even authority!)");
   });
 
   it("4. Check if I won (encrypted comparison)", async () => {
@@ -142,7 +140,7 @@ describe("private-lottery", () => {
 
     if (resultHandle) {
       const [allowancePda] = deriveAllowancePda(resultHandle);
-      
+
       const tx = await program.methods
         .checkWinner()
         .accounts({
@@ -163,70 +161,32 @@ describe("private-lottery", () => {
       const result = await decryptHandle(resultHandle.toString());
       if (result) {
         const won = result.plaintext === "1";
-        console.log("   Did I win?", won ? "YES!" : "No");
+        console.log("   Did I win?", won ? "YES!" : "No (random number didn't match)");
       }
     }
   });
 
-  it("5. Claim prize", async () => {
-    const txForSim = await program.methods
-      .claimPrize()
-      .accounts({
-        claimer: wallet.publicKey,
-        lottery: lotteryPda,
-        ticket: ticketPda,
-        vault: vaultPda,
-        systemProgram: SystemProgram.programId,
-        incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
-      } as any)
-      .transaction();
-
-    const prizeHandle = await getHandleFromSimulation(txForSim, "Prize handle:");
-
-    if (prizeHandle) {
-      const [allowancePda] = deriveAllowancePda(prizeHandle);
-
-      const tx = await program.methods
-        .claimPrize()
-        .accounts({
-          claimer: wallet.publicKey,
-          lottery: lotteryPda,
-          ticket: ticketPda,
-          vault: vaultPda,
-          systemProgram: SystemProgram.programId,
-          incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
-        } as any)
-        .remainingAccounts([
-          { pubkey: allowancePda, isSigner: false, isWritable: true },
-          { pubkey: wallet.publicKey, isSigner: false, isWritable: false },
-        ])
-        .rpc();
-
-      console.log("Claim processed:", tx);
-    }
-  });
-
-  it("6. Withdraw prize", async () => {
+  it("5. Withdraw prize (if winner)", async () => {
     const ticket = await program.account.ticket.fetch(ticketPda);
-    const prizeHandle = ticket.prizeHandle.toString();
-    
-    if (prizeHandle === "0") {
-      console.log("   No prize to claim");
+    const isWinnerHandle = ticket.isWinnerHandle.toString();
+
+    if (isWinnerHandle === "0") {
+      console.log("   Ticket not checked yet");
       return;
     }
 
-    const result = await decryptHandle(prizeHandle);
+    const result = await decryptHandle(isWinnerHandle);
     if (!result) {
       console.log("   Failed to decrypt");
       return;
     }
 
-    const prize = BigInt(result.plaintext);
-    console.log("   Prize amount:", Number(prize) / 1e9, "SOL");
+    const isWinner = result.plaintext === "1";
+    console.log("   Is winner:", isWinner);
 
-    if (prize > 0) {
+    if (isWinner) {
       const withdrawIx = await program.methods
-        .withdrawPrize(handleToBuffer(prizeHandle), plaintextToBuffer(result.plaintext))
+        .withdrawPrize(handleToBuffer(isWinnerHandle), plaintextToBuffer(result.plaintext))
         .accounts({
           winner: wallet.publicKey,
           lottery: lotteryPda,
@@ -250,9 +210,9 @@ describe("private-lottery", () => {
       const sig = await connection.sendRawTransaction(signedTx.serialize());
       await connection.confirmTransaction(sig, "confirmed");
 
-      console.log("Withdrawn:", sig);
+      console.log("Prize withdrawn:", sig);
     } else {
-      console.log("   Not a winner - prize is 0");
+      console.log("   Not a winner - cannot withdraw");
     }
   });
 
@@ -260,8 +220,7 @@ describe("private-lottery", () => {
   describe("Non-winner flow", () => {
     const lotteryId2 = lotteryId + 1;
     const LOSER_GUESS = 99;
-    const WINNING_NUMBER_2 = 7; // Different from loser's guess
-    
+
     let lottery2Pda: PublicKey;
     let vault2Pda: PublicKey;
     let ticket2Pda: PublicKey;
@@ -269,13 +228,13 @@ describe("private-lottery", () => {
     before(() => {
       const idBuffer = Buffer.alloc(8);
       idBuffer.writeBigUInt64LE(BigInt(lotteryId2));
-      
+
       [lottery2Pda] = PublicKey.findProgramAddressSync([Buffer.from("lottery"), idBuffer], program.programId);
       [vault2Pda] = PublicKey.findProgramAddressSync([Buffer.from("vault"), lottery2Pda.toBuffer()], program.programId);
       [ticket2Pda] = PublicKey.findProgramAddressSync([Buffer.from("ticket"), lottery2Pda.toBuffer(), wallet.publicKey.toBuffer()], program.programId);
     });
 
-    it("7. Create lottery (loser test)", async () => {
+    it("6. Create lottery (loser test)", async () => {
       const tx = await program.methods
         .createLottery(new anchor.BN(lotteryId2), new anchor.BN(TICKET_PRICE))
         .accounts({
@@ -285,14 +244,14 @@ describe("private-lottery", () => {
           systemProgram: SystemProgram.programId,
         } as any)
         .rpc();
-      
+
       console.log("Lottery 2 created:", tx);
     });
 
-    it("8. Buy ticket with WRONG guess", async () => {
-      console.log("   My guess:", LOSER_GUESS, "(will NOT match!)");
+    it("7. Buy ticket with guess", async () => {
+      console.log("   My guess:", LOSER_GUESS);
       const encryptedGuess = await encryptValue(BigInt(LOSER_GUESS));
-      
+
       const tx = await program.methods
         .buyTicket(hexToBuffer(encryptedGuess))
         .accounts({
@@ -304,16 +263,13 @@ describe("private-lottery", () => {
           incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
         } as any)
         .rpc();
-      
+
       console.log("Ticket bought:", tx);
     });
 
-    it("9. Authority sets DIFFERENT winning number", async () => {
-      console.log("   Winning number:", WINNING_NUMBER_2, "(different from guess!)");
-      const encryptedWinning = await encryptValue(BigInt(WINNING_NUMBER_2));
-      
+    it("8. Draw random winning number", async () => {
       const tx = await program.methods
-        .drawWinner(hexToBuffer(encryptedWinning))
+        .drawWinner()
         .accounts({
           authority: wallet.publicKey,
           lottery: lottery2Pda,
@@ -321,11 +277,11 @@ describe("private-lottery", () => {
           incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
         } as any)
         .rpc();
-      
-      console.log("Winning number set:", tx);
+
+      console.log("Random winning number drawn:", tx);
     });
 
-    it("10. Check if I won (should be NO)", async () => {
+    it("9. Check if I won", async () => {
       const txForSim = await program.methods
         .checkWinner()
         .accounts({
@@ -341,7 +297,7 @@ describe("private-lottery", () => {
 
       if (resultHandle) {
         const [allowancePda] = deriveAllowancePda(resultHandle);
-        
+
         const tx = await program.methods
           .checkWinner()
           .accounts({
@@ -362,69 +318,35 @@ describe("private-lottery", () => {
         const result = await decryptHandle(resultHandle.toString());
         if (result) {
           const won = result.plaintext === "1";
-          console.log("   Did I win?", won ? "YES!" : "No(as expected!)");
+          console.log("   Did I win?", won ? "YES!" : "No");
         }
       }
     });
 
-    it("11. Claim prize (loser gets 0)", async () => {
-      const txForSim = await program.methods
-        .claimPrize()
-        .accounts({
-          claimer: wallet.publicKey,
-          lottery: lottery2Pda,
-          ticket: ticket2Pda,
-          vault: vault2Pda,
-          systemProgram: SystemProgram.programId,
-          incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
-        } as any)
-        .transaction();
-
-      const prizeHandle = await getHandleFromSimulation(txForSim, "Prize handle:");
-
-      if (prizeHandle) {
-        const [allowancePda] = deriveAllowancePda(prizeHandle);
-
-        const tx = await program.methods
-          .claimPrize()
-          .accounts({
-            claimer: wallet.publicKey,
-            lottery: lottery2Pda,
-            ticket: ticket2Pda,
-            vault: vault2Pda,
-            systemProgram: SystemProgram.programId,
-            incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
-          } as any)
-          .remainingAccounts([
-            { pubkey: allowancePda, isSigner: false, isWritable: true },
-            { pubkey: wallet.publicKey, isSigner: false, isWritable: false },
-          ])
-          .rpc();
-
-        console.log("Claim processed:", tx);
-      }
-    });
-
-    it("12. Withdraw should FAIL (prize is 0)", async () => {
+    it("10. Withdraw should fail if not winner", async () => {
       const ticket = await program.account.ticket.fetch(ticket2Pda);
-      const prizeHandle = ticket.prizeHandle.toString();
-      
-      const result = await decryptHandle(prizeHandle);
+      const isWinnerHandle = ticket.isWinnerHandle.toString();
+
+      if (isWinnerHandle === "0") {
+        console.log("   Ticket not checked");
+        return;
+      }
+
+      const result = await decryptHandle(isWinnerHandle);
       if (!result) {
         console.log("   Failed to decrypt");
         return;
       }
 
-      const prize = BigInt(result.plaintext);
-      console.log("   Prize amount:", Number(prize), "lamports (should be 0!)");
+      const isWinner = result.plaintext === "1";
+      console.log("   Is winner:", isWinner);
 
-      if (prize === BigInt(0)) {
-        console.log("Prize is 0 - cannot withdraw (correct behavior!)");
-        
-        // Try to withdraw anyway - should fail
+      if (!isWinner) {
+        console.log("   Not a winner - trying to withdraw anyway (should fail)");
+
         try {
           const withdrawIx = await program.methods
-            .withdrawPrize(handleToBuffer(prizeHandle), plaintextToBuffer(result.plaintext))
+            .withdrawPrize(handleToBuffer(isWinnerHandle), plaintextToBuffer(result.plaintext))
             .accounts({
               winner: wallet.publicKey,
               lottery: lottery2Pda,
@@ -446,15 +368,43 @@ describe("private-lottery", () => {
 
           const signedTx = await provider.wallet.signTransaction(tx);
           await connection.sendRawTransaction(signedTx.serialize());
-          
+
           throw new Error("Should have failed!");
         } catch (e: any) {
           if (e.message.includes("NotWinner") || e.message.includes("Should have failed")) {
-            console.log("Withdraw correctly rejected - NotWinner!");
+            console.log("   Withdraw correctly rejected - NotWinner!");
           } else {
-            console.log("Withdraw rejected:", e.message.slice(0, 50));
+            console.log("   Withdraw rejected:", e.message.slice(0, 50));
           }
         }
+      } else {
+        // If by chance they won, withdraw normally
+        const withdrawIx = await program.methods
+          .withdrawPrize(handleToBuffer(isWinnerHandle), plaintextToBuffer(result.plaintext))
+          .accounts({
+            winner: wallet.publicKey,
+            lottery: lottery2Pda,
+            ticket: ticket2Pda,
+            vault: vault2Pda,
+            instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
+            systemProgram: SystemProgram.programId,
+            incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
+          } as any)
+          .instruction();
+
+        const tx = new Transaction();
+        result.ed25519Instructions.forEach(ix => tx.add(ix));
+        tx.add(withdrawIx);
+
+        const { blockhash } = await connection.getLatestBlockhash();
+        tx.recentBlockhash = blockhash;
+        tx.feePayer = wallet.publicKey;
+
+        const signedTx = await provider.wallet.signTransaction(tx);
+        const sig = await connection.sendRawTransaction(signedTx.serialize());
+        await connection.confirmTransaction(sig, "confirmed");
+
+        console.log("   Lucky winner! Prize withdrawn:", sig);
       }
     });
   });

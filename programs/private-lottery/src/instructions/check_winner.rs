@@ -52,6 +52,8 @@ pub fn handler<'info>(ctx: Context<'_, '_, '_, 'info, CheckWinner<'info>>) -> Re
             allowed_address: ctx.remaining_accounts[1].clone(),
             system_program: ctx.accounts.system_program.to_account_info(),
         });
+
+        // cover this concept for allowance
         cpi::allow(cpi_ctx, is_winner.0, true, ticket.owner)?;
     }
 
