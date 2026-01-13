@@ -1,11 +1,11 @@
 use anchor_lang::prelude::*;
 
 #[error_code]
-pub enum LotteryError {
-    #[msg("Lottery is closed")]
-    LotteryClosed,
-    #[msg("Lottery is still open")]
-    LotteryStillOpen,
+pub enum RaffleError {
+    #[msg("Raffle is closed")]
+    RaffleClosed,
+    #[msg("Raffle is still open")]
+    RaffleStillOpen,
     #[msg("No winning number set")]
     NoWinningNumber,
     #[msg("No participants")]

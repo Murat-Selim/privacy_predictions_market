@@ -5,32 +5,32 @@ use inco_lightning::{
     types::Euint128,
     ID as INCO_LIGHTNING_ID,
 };
-use crate::state::{Lottery, Ticket};
-use crate::error::LotteryError;
+use crate::state::{Raffle, Ticket};
+use crate::error::RaffleError;
 
 #[derive(Accounts)]
 pub struct BuyTicket<'info> {
     #[account(mut)]
     pub buyer: Signer<'info>,
-    
+
     #[account(mut)]
-    pub lottery: Account<'info, Lottery>,
-    
+    pub raffle: Account<'info, Raffle>,
+
     #[account(
-        init, 
-        payer = buyer, 
+        init,
+        payer = buyer,
         space = Ticket::SIZE,
-        seeds = [b"ticket", lottery.key().as_ref(), buyer.key().as_ref()], 
+        seeds = [b"ticket", raffle.key().as_ref(), buyer.key().as_ref()],
         bump
     )]
     pub ticket: Account<'info, Ticket>,
-    
+
     /// CHECK: vault PDA
-    #[account(mut, seeds = [b"vault", lottery.key().as_ref()], bump)]
+    #[account(mut, seeds = [b"vault", raffle.key().as_ref()], bump)]
     pub vault: AccountInfo<'info>,
-    
+
     pub system_program: Program<'info, System>,
-    
+
     #[account(address = INCO_LIGHTNING_ID)]
     pub inco_lightning_program: Program<'info, IncoLightning>,
 }
@@ -39,15 +39,15 @@ pub fn handler<'info>(
     ctx: Context<'_, '_, '_, 'info, BuyTicket<'info>>,
     encrypted_guess: Vec<u8>,
 ) -> Result<()> {
-    let lottery = &mut ctx.accounts.lottery;
-    require!(lottery.is_open, LotteryError::LotteryClosed);
+    let raffle = &mut ctx.accounts.raffle;
+    require!(raffle.is_open, RaffleError::RaffleClosed);
 
     // Pay for ticket
     anchor_lang::solana_program::program::invoke(
         &anchor_lang::solana_program::system_instruction::transfer(
             &ctx.accounts.buyer.key(),
             &ctx.accounts.vault.key(),
-            lottery.ticket_price,
+            raffle.ticket_price,
         ),
         &[
             ctx.accounts.buyer.to_account_info(),
@@ -56,7 +56,7 @@ pub fn handler<'info>(
         ],
     )?;
 
-    lottery.participant_count += 1;
+    raffle.participant_count += 1;
 
     // Create encrypted guess handle
     let inco = ctx.accounts.inco_lightning_program.to_account_info();
@@ -65,7 +65,7 @@ pub fn handler<'info>(
 
     // Store ticket
     let ticket = &mut ctx.accounts.ticket;
-    ticket.lottery = lottery.key();
+    ticket.raffle = raffle.key();
     ticket.owner = ctx.accounts.buyer.key();
     ticket.guess_handle = guess_handle.0;
     ticket.bump = ctx.bumps.ticket;

@@ -9,14 +9,14 @@ pub mod state;
 
 use instructions::*;
 
-declare_id!("6fQ5w1YWBShrFZGepxt1tBSDtobJgXPsYGpG4GstmfzF");
+declare_id!("4jfrTCa7eahgpyR1iVSWuircw3K9NK565owhAMJxr38Q");
 
 #[program]
-pub mod private_lottery {
+pub mod private_raffle {
     use super::*;
 
-    pub fn create_lottery(ctx: Context<CreateLottery>, lottery_id: u64, ticket_price: u64) -> Result<()> {
-        instructions::create_lottery::handler(ctx, lottery_id, ticket_price)
+    pub fn create_raffle(ctx: Context<CreateRaffle>, raffle_id: u64, ticket_price: u64) -> Result<()> {
+        instructions::create_raffle::handler(ctx, raffle_id, ticket_price)
     }
 
     pub fn buy_ticket<'info>(

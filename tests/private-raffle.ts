@@ -1,6 +1,6 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import { PrivateLottery } from "../target/types/private_lottery";
+import { PrivateRaffle } from "../target/types/private_raffle";
 import { PublicKey, Keypair, SystemProgram, Connection, SYSVAR_INSTRUCTIONS_PUBKEY, Transaction } from "@solana/web3.js";
 import nacl from "tweetnacl";
 import { encryptValue } from "@inco/solana-sdk/encryption";
@@ -9,23 +9,23 @@ import { handleToBuffer, plaintextToBuffer, hexToBuffer } from "@inco/solana-sdk
 
 const INCO_LIGHTNING_PROGRAM_ID = new PublicKey("5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj");
 
-describe("private-lottery", () => {
+describe("private-raffle", () => {
   const connection = new Connection("https://api.devnet.solana.com", "confirmed");
   const provider = new anchor.AnchorProvider(connection, anchor.AnchorProvider.env().wallet, {
     commitment: "confirmed",
   });
   anchor.setProvider(provider);
 
-  const program = anchor.workspace.privateLottery as Program<PrivateLottery>;
+  const program = anchor.workspace.privateRaffle as Program<PrivateRaffle>;
   let wallet: Keypair;
 
-  const lotteryId = Math.floor(Date.now() / 1000);
+  const raffleId = Math.floor(Date.now() / 1000);
   const TICKET_PRICE = 10_000_000; // 0.01 SOL
 
   // The game: guess 1-100, winning number is random!
   const MY_GUESS = 42;
 
-  let lotteryPda: PublicKey;
+  let rafflePda: PublicKey;
   let vaultPda: PublicKey;
   let ticketPda: PublicKey;
 
@@ -33,11 +33,11 @@ describe("private-lottery", () => {
     wallet = (provider.wallet as any).payer as Keypair;
 
     const idBuffer = Buffer.alloc(8);
-    idBuffer.writeBigUInt64LE(BigInt(lotteryId));
+    idBuffer.writeBigUInt64LE(BigInt(raffleId));
 
-    [lotteryPda] = PublicKey.findProgramAddressSync([Buffer.from("lottery"), idBuffer], program.programId);
-    [vaultPda] = PublicKey.findProgramAddressSync([Buffer.from("vault"), lotteryPda.toBuffer()], program.programId);
-    [ticketPda] = PublicKey.findProgramAddressSync([Buffer.from("ticket"), lotteryPda.toBuffer(), wallet.publicKey.toBuffer()], program.programId);
+    [rafflePda] = PublicKey.findProgramAddressSync([Buffer.from("raffle"), idBuffer], program.programId);
+    [vaultPda] = PublicKey.findProgramAddressSync([Buffer.from("vault"), rafflePda.toBuffer()], program.programId);
+    [ticketPda] = PublicKey.findProgramAddressSync([Buffer.from("ticket"), rafflePda.toBuffer(), wallet.publicKey.toBuffer()], program.programId);
   });
 
   function deriveAllowancePda(handle: bigint): [PublicKey, number] {
@@ -74,18 +74,18 @@ describe("private-lottery", () => {
     return null;
   }
 
-  it("1. Create lottery", async () => {
+  it("1. Create raffle", async () => {
     const tx = await program.methods
-      .createLottery(new anchor.BN(lotteryId), new anchor.BN(TICKET_PRICE))
+      .createRaffle(new anchor.BN(raffleId), new anchor.BN(TICKET_PRICE))
       .accounts({
         authority: wallet.publicKey,
-        lottery: lotteryPda,
+        raffle: rafflePda,
         vault: vaultPda,
         systemProgram: SystemProgram.programId,
       } as any)
       .rpc();
 
-    console.log("Lottery created:", tx);
+    console.log("Raffle created:", tx);
     console.log("   Guess a number 1-100!");
   });
 
@@ -97,7 +97,7 @@ describe("private-lottery", () => {
       .buyTicket(hexToBuffer(encryptedGuess))
       .accounts({
         buyer: wallet.publicKey,
-        lottery: lotteryPda,
+        raffle: rafflePda,
         ticket: ticketPda,
         vault: vaultPda,
         systemProgram: SystemProgram.programId,
@@ -114,7 +114,7 @@ describe("private-lottery", () => {
       .drawWinner()
       .accounts({
         authority: wallet.publicKey,
-        lottery: lotteryPda,
+        raffle: rafflePda,
         systemProgram: SystemProgram.programId,
         incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
       } as any)
@@ -129,7 +129,7 @@ describe("private-lottery", () => {
       .checkWinner()
       .accounts({
         checker: wallet.publicKey,
-        lottery: lotteryPda,
+        raffle: rafflePda,
         ticket: ticketPda,
         systemProgram: SystemProgram.programId,
         incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
@@ -145,7 +145,7 @@ describe("private-lottery", () => {
         .checkWinner()
         .accounts({
           checker: wallet.publicKey,
-          lottery: lotteryPda,
+          raffle: rafflePda,
           ticket: ticketPda,
           systemProgram: SystemProgram.programId,
           incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
@@ -189,7 +189,7 @@ describe("private-lottery", () => {
         .withdrawPrize(handleToBuffer(isWinnerHandle), plaintextToBuffer(result.plaintext))
         .accounts({
           winner: wallet.publicKey,
-          lottery: lotteryPda,
+          raffle: rafflePda,
           ticket: ticketPda,
           vault: vaultPda,
           instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
@@ -218,34 +218,34 @@ describe("private-lottery", () => {
 
   // ============ LOSER TEST ============
   describe("Non-winner flow", () => {
-    const lotteryId2 = lotteryId + 1;
+    const raffleId2 = raffleId + 1;
     const LOSER_GUESS = 99;
 
-    let lottery2Pda: PublicKey;
+    let raffle2Pda: PublicKey;
     let vault2Pda: PublicKey;
     let ticket2Pda: PublicKey;
 
     before(() => {
       const idBuffer = Buffer.alloc(8);
-      idBuffer.writeBigUInt64LE(BigInt(lotteryId2));
+      idBuffer.writeBigUInt64LE(BigInt(raffleId2));
 
-      [lottery2Pda] = PublicKey.findProgramAddressSync([Buffer.from("lottery"), idBuffer], program.programId);
-      [vault2Pda] = PublicKey.findProgramAddressSync([Buffer.from("vault"), lottery2Pda.toBuffer()], program.programId);
-      [ticket2Pda] = PublicKey.findProgramAddressSync([Buffer.from("ticket"), lottery2Pda.toBuffer(), wallet.publicKey.toBuffer()], program.programId);
+      [raffle2Pda] = PublicKey.findProgramAddressSync([Buffer.from("raffle"), idBuffer], program.programId);
+      [vault2Pda] = PublicKey.findProgramAddressSync([Buffer.from("vault"), raffle2Pda.toBuffer()], program.programId);
+      [ticket2Pda] = PublicKey.findProgramAddressSync([Buffer.from("ticket"), raffle2Pda.toBuffer(), wallet.publicKey.toBuffer()], program.programId);
     });
 
-    it("6. Create lottery (loser test)", async () => {
+    it("6. Create raffle (loser test)", async () => {
       const tx = await program.methods
-        .createLottery(new anchor.BN(lotteryId2), new anchor.BN(TICKET_PRICE))
+        .createRaffle(new anchor.BN(raffleId2), new anchor.BN(TICKET_PRICE))
         .accounts({
           authority: wallet.publicKey,
-          lottery: lottery2Pda,
+          raffle: raffle2Pda,
           vault: vault2Pda,
           systemProgram: SystemProgram.programId,
         } as any)
         .rpc();
 
-      console.log("Lottery 2 created:", tx);
+      console.log("Raffle 2 created:", tx);
     });
 
     it("7. Buy ticket with guess", async () => {
@@ -256,7 +256,7 @@ describe("private-lottery", () => {
         .buyTicket(hexToBuffer(encryptedGuess))
         .accounts({
           buyer: wallet.publicKey,
-          lottery: lottery2Pda,
+          raffle: raffle2Pda,
           ticket: ticket2Pda,
           vault: vault2Pda,
           systemProgram: SystemProgram.programId,
@@ -272,7 +272,7 @@ describe("private-lottery", () => {
         .drawWinner()
         .accounts({
           authority: wallet.publicKey,
-          lottery: lottery2Pda,
+          raffle: raffle2Pda,
           systemProgram: SystemProgram.programId,
           incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
         } as any)
@@ -286,7 +286,7 @@ describe("private-lottery", () => {
         .checkWinner()
         .accounts({
           checker: wallet.publicKey,
-          lottery: lottery2Pda,
+          raffle: raffle2Pda,
           ticket: ticket2Pda,
           systemProgram: SystemProgram.programId,
           incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
@@ -302,7 +302,7 @@ describe("private-lottery", () => {
           .checkWinner()
           .accounts({
             checker: wallet.publicKey,
-            lottery: lottery2Pda,
+            raffle: raffle2Pda,
             ticket: ticket2Pda,
             systemProgram: SystemProgram.programId,
             incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
@@ -349,7 +349,7 @@ describe("private-lottery", () => {
             .withdrawPrize(handleToBuffer(isWinnerHandle), plaintextToBuffer(result.plaintext))
             .accounts({
               winner: wallet.publicKey,
-              lottery: lottery2Pda,
+              raffle: raffle2Pda,
               ticket: ticket2Pda,
               vault: vault2Pda,
               instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
@@ -383,7 +383,7 @@ describe("private-lottery", () => {
           .withdrawPrize(handleToBuffer(isWinnerHandle), plaintextToBuffer(result.plaintext))
           .accounts({
             winner: wallet.publicKey,
-            lottery: lottery2Pda,
+            raffle: raffle2Pda,
             ticket: ticket2Pda,
             vault: vault2Pda,
             instructions: SYSVAR_INSTRUCTIONS_PUBKEY,

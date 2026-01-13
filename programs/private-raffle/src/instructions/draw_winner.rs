@@ -5,8 +5,8 @@ use inco_lightning::{
     types::Euint128,
     ID as INCO_LIGHTNING_ID,
 };
-use crate::state::Lottery;
-use crate::error::LotteryError;
+use crate::state::Raffle;
+use crate::error::RaffleError;
 
 #[derive(Accounts)]
 pub struct DrawWinner<'info> {
@@ -14,7 +14,7 @@ pub struct DrawWinner<'info> {
     pub authority: Signer<'info>,
 
     #[account(mut)]
-    pub lottery: Account<'info, Lottery>,
+    pub raffle: Account<'info, Raffle>,
 
     pub system_program: Program<'info, System>,
 
@@ -27,11 +27,11 @@ pub struct DrawWinner<'info> {
 pub fn handler<'info>(
     ctx: Context<'_, '_, '_, 'info, DrawWinner<'info>>,
 ) -> Result<()> {
-    let lottery = &mut ctx.accounts.lottery;
-    require!(lottery.authority == ctx.accounts.authority.key(), LotteryError::Unauthorized);
-    require!(lottery.is_open, LotteryError::LotteryClosed);
+    let raffle = &mut ctx.accounts.raffle;
+    require!(raffle.authority == ctx.accounts.authority.key(), RaffleError::Unauthorized);
+    require!(raffle.is_open, RaffleError::RaffleClosed);
 
-    lottery.is_open = false;
+    raffle.is_open = false;
 
     let inco = ctx.accounts.inco_lightning_program.to_account_info();
     let signer = ctx.accounts.authority.to_account_info();
@@ -56,7 +56,7 @@ pub fn handler<'info>(
     let cpi_ctx = CpiContext::new(inco, Operation { signer });
     let winning_number: Euint128 = e_add(cpi_ctx, bounded, one, 0)?;
 
-    lottery.winning_number_handle = winning_number.0;
+    raffle.winning_number_handle = winning_number.0;
 
     msg!("Winning number drawn randomly!");
     msg!("   Handle: {}", winning_number.0);

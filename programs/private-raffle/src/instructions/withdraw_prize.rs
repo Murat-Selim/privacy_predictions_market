@@ -4,8 +4,8 @@ use inco_lightning::{
     program::IncoLightning,
     ID as INCO_LIGHTNING_ID,
 };
-use crate::state::{Lottery, Ticket};
-use crate::error::LotteryError;
+use crate::state::{Raffle, Ticket};
+use crate::error::RaffleError;
 
 #[derive(Accounts)]
 pub struct WithdrawPrize<'info> {
@@ -13,7 +13,7 @@ pub struct WithdrawPrize<'info> {
     pub winner: Signer<'info>,
 
     #[account(mut)]
-    pub lottery: Account<'info, Lottery>,
+    pub raffle: Account<'info, Raffle>,
 
     #[account(mut)]
     pub ticket: Account<'info, Ticket>,
@@ -21,7 +21,7 @@ pub struct WithdrawPrize<'info> {
     /// CHECK: vault PDA - we need the bump to sign
     #[account(
         mut,
-        seeds = [b"vault", lottery.key().as_ref()],
+        seeds = [b"vault", raffle.key().as_ref()],
         bump
     )]
     pub vault: AccountInfo<'info>,
@@ -44,12 +44,12 @@ pub fn handler(
     plaintext: Vec<u8>,
 ) -> Result<()> {
     let ticket = &mut ctx.accounts.ticket;
-    let lottery = &mut ctx.accounts.lottery;
+    let raffle = &mut ctx.accounts.raffle;
 
-    require!(ticket.owner == ctx.accounts.winner.key(), LotteryError::NotOwner);
-    require!(ticket.is_winner_handle != 0, LotteryError::NotChecked);
-    require!(!ticket.claimed, LotteryError::AlreadyClaimed);
-    require!(!lottery.prize_claimed, LotteryError::AlreadyClaimed);
+    require!(ticket.owner == ctx.accounts.winner.key(), RaffleError::NotOwner);
+    require!(ticket.is_winner_handle != 0, RaffleError::NotChecked);
+    require!(!ticket.claimed, RaffleError::AlreadyClaimed);
+    require!(!raffle.prize_claimed, RaffleError::AlreadyClaimed);
 
     // Verify the decryption signature on-chain for is_winner_handle
     let cpi_ctx = CpiContext::new(
@@ -71,21 +71,21 @@ pub fn handler(
     msg!("Plaintext bytes: {:?}", plaintext);
     let is_winner = parse_plaintext_to_bool(&plaintext)?;
     msg!("Parsed is_winner: {}", is_winner);
-    require!(is_winner, LotteryError::NotWinner);
+    require!(is_winner, RaffleError::NotWinner);
 
     // Mark as claimed to prevent double-withdraw
     ticket.claimed = true;
-    lottery.prize_claimed = true;
+    raffle.prize_claimed = true;
 
     // Transfer entire vault to winner (first-come-first-serve)
     let prize = ctx.accounts.vault.lamports();
-    require!(prize > 0, LotteryError::NoFunds);
+    require!(prize > 0, RaffleError::NoFunds);
 
     // Use invoke_signed with vault PDA seeds
-    let lottery_key = lottery.key();
+    let raffle_key = raffle.key();
     let vault_seeds: &[&[u8]] = &[
         b"vault",
-        lottery_key.as_ref(),
+        raffle_key.as_ref(),
         &[ctx.bumps.vault],
     ];
 

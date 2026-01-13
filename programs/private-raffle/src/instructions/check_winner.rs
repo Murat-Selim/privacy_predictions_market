@@ -5,40 +5,40 @@ use inco_lightning::{
     types::{Ebool, Euint128},
     ID as INCO_LIGHTNING_ID,
 };
-use crate::state::{Lottery, Ticket};
-use crate::error::LotteryError;
+use crate::state::{Raffle, Ticket};
+use crate::error::RaffleError;
 
 #[derive(Accounts)]
 pub struct CheckWinner<'info> {
     #[account(mut)]
     pub checker: Signer<'info>,
-    
-    pub lottery: Account<'info, Lottery>,
-    
+
+    pub raffle: Account<'info, Raffle>,
+
     #[account(mut)]
     pub ticket: Account<'info, Ticket>,
-    
+
     pub system_program: Program<'info, System>,
-    
+
     #[account(address = INCO_LIGHTNING_ID)]
     pub inco_lightning_program: Program<'info, IncoLightning>,
 }
 
 pub fn handler<'info>(ctx: Context<'_, '_, '_, 'info, CheckWinner<'info>>) -> Result<()> {
-    let lottery = &ctx.accounts.lottery;
+    let raffle = &ctx.accounts.raffle;
     let ticket = &mut ctx.accounts.ticket;
-    
-    require!(!lottery.is_open, LotteryError::LotteryStillOpen);
-    require!(lottery.winning_number_handle != 0, LotteryError::NoWinningNumber);
+
+    require!(!raffle.is_open, RaffleError::RaffleStillOpen);
+    require!(raffle.winning_number_handle != 0, RaffleError::NoWinningNumber);
 
     let inco = ctx.accounts.inco_lightning_program.to_account_info();
     let cpi_ctx = CpiContext::new(inco.clone(), Operation { signer: ctx.accounts.checker.to_account_info() });
-    
+
     // Encrypted comparison: guess == winning_number?
     let is_winner: Ebool = cpi::e_eq(
         cpi_ctx,
         Euint128(ticket.guess_handle),
-        Euint128(lottery.winning_number_handle),
+        Euint128(raffle.winning_number_handle),
         0,
     )?;
 
