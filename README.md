@@ -1,6 +1,6 @@
 # Privacy Predictions Market
 
-A confidential prediction market platform built on Solana using Inco Lightning rust SDK for encrypted compute on Solana. Users can make encrypted predictions on asset prices, and outcomes are determined through encrypted comparison, ensuring complete privacy throughout the market lifecycle.
+A confidential range prediction market platform built on Solana using Inco Lightning Rust SDK for encrypted compute on Solana. Users can make encrypted predictions on asset prices at specific ranges, and outcomes are determined through encrypted comparison, ensuring complete privacy throughout the market lifecycle.
 
 ## Overview
 
