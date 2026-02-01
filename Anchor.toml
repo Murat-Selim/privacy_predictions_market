@@ -1,4 +1,5 @@
 [toolchain]
+anchor_version = "0.31.1"
 package_manager = "yarn"
 
 [features]
@@ -6,7 +7,7 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-private_raffle = "4jfrTCa7eahgpyR1iVSWuircw3K9NK565owhAMJxr38Q"
+range_prediction_market = "GVuxc87ispNtvPuePDUCfxQzxbDoTzsw5iVttBqWpF85"
 
 [registry]
 url = "https://api.apr.dev"
@@ -17,3 +18,5 @@ wallet = "~/.config/solana/id.json"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+
+[hooks]

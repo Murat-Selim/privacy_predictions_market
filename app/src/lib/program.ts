@@ -3,7 +3,7 @@ import { Connection, PublicKey, SystemProgram } from "@solana/web3.js";
 
 // Program ID from the deployed contract
 export const PROGRAM_ID = new PublicKey(
-  "HY5CHkW7FEvCMdZLKrQ4w2Vr6krGtnJ1Kttd2WPqW9WC"
+  "GVuxc87ispNtvPuePDUCfxQzxbDoTzsw5iVttBqWpF85"
 );
 
 // Inco Lightning Program ID
@@ -14,7 +14,7 @@ export const INCO_LIGHTNING_PROGRAM_ID = new PublicKey(
 // IDL import
 import idl from "./idl.json";
 
-export type PrivateRaffleIDL = typeof idl;
+export type RangePredictionIDL = typeof idl;
 
 export function getProgram(
   connection: Connection,
@@ -23,58 +23,81 @@ export function getProgram(
   const provider = new AnchorProvider(connection, wallet, {
     commitment: "confirmed",
   });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return new Program(idl as any, provider);
+  return new Program(idl as any, provider) as any;
 }
 
 // PDA derivation functions
-export function getRafflePDA(raffleId: BN): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from("raffle"), raffleId.toArrayLike(Buffer, "le", 8)],
-    PROGRAM_ID
-  );
-}
-
-export function getTicketPDA(
-  raffle: PublicKey,
-  buyer: PublicKey
+export function getMarketPDA(
+  authority: PublicKey,
+  assetSymbol: string
 ): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("ticket"), raffle.toBuffer(), buyer.toBuffer()],
+    [
+      Buffer.from("market"),
+      authority.toBuffer(),
+      Buffer.from(assetSymbol),
+    ],
     PROGRAM_ID
   );
 }
 
-export function getVaultPDA(raffle: PublicKey): [PublicKey, number] {
+export function getBetPDA(
+  market: PublicKey,
+  owner: PublicKey
+): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("vault"), raffle.toBuffer()],
+    [Buffer.from("bet"), market.toBuffer(), owner.toBuffer()],
+    PROGRAM_ID
+  );
+}
+
+export function getVaultPDA(market: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("vault"), market.toBuffer()],
     PROGRAM_ID
   );
 }
 
 // Convert u128 handle to Buffer
-export function handleToBuffer(handle: BN | bigint): Buffer {
-  const bn = typeof handle === "bigint" ? new BN(handle.toString()) : handle;
+export function handleToBuffer(handle: BN | bigint | string): Buffer {
+  const bn =
+    typeof handle === "bigint"
+      ? new BN(handle.toString())
+      : typeof handle === "string"
+        ? new BN(handle)
+        : handle;
   return bn.toArrayLike(Buffer, "le", 16);
 }
 
-// Raffle account type
-export interface RaffleAccount {
+export function plaintextToBuffer(plaintext: string): Buffer {
+  // If it's a number-like string, convert to u128
+  if (/^\d+$/.test(plaintext)) {
+    return new BN(plaintext).toArrayLike(Buffer, "le", 16);
+  }
+  return Buffer.from(plaintext);
+}
+
+// Market account type
+export interface MarketAccount {
   authority: PublicKey;
-  raffleId: BN;
-  ticketPrice: BN;
+  mint: PublicKey;
+  assetSymbol: string;
+  startTimestamp: BN;
+  endTimestamp: BN;
+  isSettled: boolean;
+  finalPriceHandle: BN;
   participantCount: number;
-  isOpen: boolean;
   prizeClaimed: boolean;
-  winningNumberHandle: BN;
   bump: number;
 }
 
-// Ticket account type
-export interface TicketAccount {
-  raffle: PublicKey;
+// Bet account type
+export interface BetAccount {
+  market: PublicKey;
   owner: PublicKey;
-  guessHandle: BN;
+  minHandle: BN;
+  maxHandle: BN;
+  amountHandle: BN;
   isWinnerHandle: BN;
   claimed: boolean;
   bump: number;

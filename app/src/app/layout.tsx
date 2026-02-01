@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Raffle",
-  description: "Raffle - powered by Inco",
+  title: "Confidential Market",
+  description: "Private Range Price Prediction Market - powered by Inco",
 };
 
 export default function RootLayout({

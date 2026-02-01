@@ -1,109 +1,76 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
+import { useMarket } from "@/hooks/useMarket";
+import { useWallet } from "@solana/wallet-adapter-react";
 import { useRouter } from "next/navigation";
-import { BN } from "@coral-xyz/anchor";
-import { LAMPORTS_PER_SOL } from "@solana/web3.js";
-import { useRaffle } from "@/hooks/useRaffle";
-import { TxStatus } from "@/components/tx-link";
+import { PublicKey } from "@solana/web3.js";
+import Navbar from "@/components/navbar";
+import { AssetSelector } from "@/components/prediction/AssetSelector";
 
-export default function CreatePage() {
+export default function CreateMarketPage() {
+  const { initializeMarket } = useMarket();
+  const { publicKey } = useWallet();
   const router = useRouter();
-  const { createRaffle, loading, error } = useRaffle();
-  const [price, setPrice] = useState("");
-  const [txHash, setTxHash] = useState<string | null>(null);
-  const [txStatus, setTxStatus] = useState<string | null>(null);
+  const [asset, setAsset] = useState("BTC");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async () => {
-    if (!price) return;
+  const handleCreate = async () => {
+    if (!publicKey) return;
+    setLoading(true);
+    try {
+      // Use Wrapped SOL (Native Token)
+      const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
+      const FEEDS = {
+        BTC: new PublicKey("Hov6Q8D2yYv7LEmS6HnK1aym8M65v7Cg7eYGu2S12q94"),
+        SOL: new PublicKey("J83w4HBb9BvY6Rof8qHjMioeS4ay4K3U594zG3k5zN67"),
+      };
 
-    setTxStatus("Creating raffle...");
-    setTxHash(null);
-
-    // Generate a unique raffle ID from timestamp
-    const raffleId = new BN(Date.now());
-
-    // Convert price to lamports
-    const ticketPrice = new BN(parseFloat(price) * LAMPORTS_PER_SOL);
-
-    console.log("Creating raffle:", {
-      raffleId: raffleId.toString(),
-      ticketPrice: ticketPrice.toString(),
-    });
-
-    const tx = await createRaffle(raffleId, ticketPrice);
-
-    if (tx) {
-      console.log("Raffle created successfully:", tx);
-      setTxHash(tx);
-      setTxStatus("Raffle created successfully!");
-
-      // Redirect after showing success
-      setTimeout(() => {
+      const now = Math.floor(Date.now() / 1000);
+      const tx = await initializeMarket(asset, now, WSOL_MINT, FEEDS[asset as keyof typeof FEEDS]);
+      if (tx) {
         router.push("/");
-      }, 3000);
-    } else {
-      setTxStatus(null);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const inputClass =
-    "w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/30 focus:outline-none focus:border-[#3673F5]/50 transition-colors";
-  const labelClass =
-    "text-xs uppercase tracking-wider text-white/40 mb-2 block";
-
   return (
-    <main className="pt-32 px-8 pb-20 max-w-6xl mx-auto flex flex-col items-center justify-center min-h-[80vh]">
-      <div className="w-full max-w-md">
-        <h1 className="text-4xl font-light mb-2 text-center">Create Raffle</h1>
-        <p className="text-white/40 mb-12 text-center">
-          Set up a new raffle for your community
-        </p>
+    <>
+      <Navbar />
+      <main className="pt-32 px-8 pb-20 max-w-2xl mx-auto">
+        <h1 className="text-5xl font-light mb-12">Launch Market</h1>
 
-        {error && (
-          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">
-            {error}
-          </div>
-        )}
-
-        {txStatus && (
-          <TxStatus status={txStatus} txHash={txHash} isSuccess={!!txHash} />
-        )}
-
-        <div className="space-y-6">
-          <div>
-            <label className={labelClass}>Ticket Price (SOL)</label>
-            <input
-              type="number"
-              placeholder="0.01"
-              step="0.01"
-              min="0"
-              className={inputClass}
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-            />
-            <p className="mt-2 text-xs text-white/30">
-              Each participant pays this amount to enter
-            </p>
+        <div className="bg-white/[0.02] border border-white/5 rounded-3xl p-10 space-y-10">
+          <div className="space-y-4">
+            <label className="text-xs uppercase tracking-widest text-white/30">Select Asset</label>
+            <AssetSelector selected={asset} onSelect={setAsset} />
           </div>
 
-          <button
-            onClick={handleSubmit}
-            disabled={loading || !price || !!txHash}
-            className={`w-full mt-8 px-6 py-3 bg-white text-black text-sm font-medium rounded-full hover:bg-white/90 transition-all duration-300 ${
-              loading || !price || !!txHash
-                ? "opacity-50 cursor-not-allowed"
-                : ""
-            }`}
-          >
-            {loading
-              ? "Creating..."
-              : txHash
-              ? "Redirecting..."
-              : "Create Raffle"}
-          </button>
+          <div className="space-y-4">
+            <label className="text-xs uppercase tracking-widest text-white/30">Duration</label>
+            <div className="p-4 bg-white/[0.03] border border-white/10 rounded-xl text-white/60">
+              Fixed 1 Hour (3,600 seconds)
+            </div>
+          </div>
+
+          <div className="pt-6">
+            <button
+              onClick={handleCreate}
+              disabled={loading || !publicKey}
+              className="w-full py-4 bg-[#3673F5] text-white font-medium rounded-2xl hover:bg-[#3673F5]/90 transition-all disabled:opacity-50 shadow-[0_10px_30px_rgba(54,115,245,0.2)]"
+            >
+              {loading ? "Initializing..." : "Create Confidential Market"}
+            </button>
+            {!publicKey && (
+              <p className="text-center text-xs text-red-400/60 mt-4">Connect wallet to continue</p>
+            )}
+          </div>
         </div>
-      </div>
-    </main>
+      </main>
+    </>
   );
 }
