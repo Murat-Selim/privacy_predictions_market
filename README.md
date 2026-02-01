@@ -1,15 +1,15 @@
-# Private Raffle
+# Privacy Predictions Market
 
-A confidential raffle system built on Solana using Inco Lightning rust SDK for encrypted compute on Solana. Players submit encrypted guesses, and the winning number remains hidden until verification, ensuring complete privacy throughout the game.
+A confidential prediction market platform built on Solana using Inco Lightning rust SDK for encrypted compute on Solana. Users can make encrypted predictions on asset prices, and outcomes are determined through encrypted comparison, ensuring complete privacy throughout the market lifecycle.
 
 ## Overview
 
-This program implements a simple number-guessing raffle (1-100) where:
+This program implements a prediction market where:
 
-- Player guesses are encrypted and hidden from everyone
-- The winning number is encrypted and hidden from everyone
-- Winner determination happens through encrypted comparison
-- Only the ticket owner can decrypt their result
+- User predictions are encrypted and hidden from everyone
+- Asset prices are encrypted and hidden from everyone
+- Outcome determination happens through encrypted comparison
+- Only prediction owners can decrypt their results and winnings
 
 ## Architecture
 
@@ -17,20 +17,19 @@ This program implements a simple number-guessing raffle (1-100) where:
 
 | Data | Visibility |
 |------|------------|
-| Player's guess | Encrypted (only player can decrypt) |
-| Winning number | Encrypted (set by authority) |
-| Win/loss result | Encrypted (only ticket owner can decrypt) |
-| Prize amount | Encrypted (only ticket owner can decrypt) |
+| User's prediction | Encrypted (only user can decrypt) |
+| Asset price | Encrypted (set by oracle/authority) |
+| Win/loss result | Encrypted (only prediction owner can decrypt) |
+| Winnings amount | Encrypted (only prediction owner can decrypt) |
 
 ### Program Flow
 
 ```
-1. create_raffle    -> Authority creates raffle with ticket price
-2. buy_ticket        -> Player submits encrypted guess (1-100)
-3. draw_winner       -> Authority sets encrypted winning number
-4. check_winner      -> Encrypted comparison: guess == winning_number
-5. claim_prize       -> e_select(is_winner, prize, 0) computes encrypted prize
-6. withdraw_prize    -> On-chain signature verification, transfer if prize > 0
+1. initialize_market -> Authority creates market with asset, time range, and fee
+2. submit_bet        -> User submits encrypted prediction (price range)
+3. evaluate_bet      -> Authority sets encrypted asset price
+4. settle_market     -> Encrypted comparison: prediction == asset_price
+5. claim_prize       -> e_select(is_winner, prize_pool, 0) computes encrypted winnings
 ```
 
 ### Key Encrypted Operations
@@ -43,30 +42,31 @@ This program implements a simple number-guessing raffle (1-100) where:
 
 ## Account Structures
 
-### Raffle
+### Market
 
 ```rust
-pub struct Raffle {
+pub struct Market {
     pub authority: Pubkey,
-    pub raffle_id: u64,
-    pub ticket_price: u64,
+    pub market_id: u64,
+    pub asset: String,              // Asset being predicted (e.g., "BTC/USD")
+    pub entry_fee: u64,
     pub participant_count: u32,
     pub is_open: bool,
-    pub prize_claimed: bool,                // True when a winner has withdrawn
-    pub winning_number_handle: u128,        // Encrypted winning number (1-100)
+    pub settled: bool,              // True when market has been settled
+    pub asset_price_handle: u128,   // Encrypted asset price
     pub bump: u8,
 }
 ```
 
-### Ticket
+### Bet
 
 ```rust
-pub struct Ticket {
-    pub raffle: Pubkey,
-    pub owner: Pubkey,
-    pub guess_handle: u128,       // Encrypted guess (1-100)
-    pub is_winner_handle: u128,   // Encrypted: guess == winning?
-    pub claimed: bool,            // Whether this ticket holder has withdrawn
+pub struct Bet {
+    pub market: Pubkey,
+    pub bettor: Pubkey,
+    pub prediction_handle: u128,    // Encrypted prediction (price range)
+    pub is_winner_handle: u128,     // Encrypted: prediction == asset_price?
+    pub claimed: bool,              // Whether this bettor has claimed winnings
     pub bump: u8,
 }
 ```
@@ -83,8 +83,8 @@ pub struct Ticket {
 
 ```bash
 # Clone repository
-git clone https://github.com/Inco-fhevm/raffle-example-solana
-cd raffle-example-solana
+git clone https://github.com/Murat-Selim/privacy_predictions_market.git
+cd privacy_predictions_market
 
 # Install dependencies
 yarn install
@@ -119,8 +119,8 @@ anchor test --skip-deploy
 
 The test suite covers two scenarios:
 
-1. **Winner Flow**: Player guesses correctly and withdraws prize
-2. **Non-Winner Flow**: Player guesses incorrectly and withdrawal fails
+1. **Winner Flow**: User predicts correctly and claims winnings
+2. **Non-Winner Flow**: User predicts incorrectly and cannot claim
 
 ## Usage
 
@@ -131,17 +131,17 @@ import { encryptValue } from "@inco/solana-sdk/encryption";
 import { decrypt } from "@inco/solana-sdk/attested-decrypt";
 import { hexToBuffer } from "@inco/solana-sdk/utils";
 
-// Encrypt guess
-const myGuess = 42;
-const encryptedGuess = await encryptValue(BigInt(myGuess));
+// Encrypt prediction
+const myPrediction = 50000; // Predicting BTC/USD at $50,000
+const encryptedPrediction = await encryptValue(BigInt(myPrediction));
 
-// Buy ticket
+// Submit bet
 await program.methods
-  .buyTicket(hexToBuffer(encryptedGuess))
+  .submitBet(hexToBuffer(encryptedPrediction))
   .accounts({...})
   .rpc();
 
-// Decrypt result after checking
+// Decrypt result after market settlement
 const result = await decrypt([resultHandle], {
   address: wallet.publicKey,
   signMessage: async (msg) => nacl.sign.detached(msg, wallet.secretKey),
@@ -161,7 +161,7 @@ const [allowancePda] = PublicKey.findProgramAddressSync(
 );
 
 await program.methods
-  .checkWinner()
+  .settleMarket()
   .accounts({...})
   .remainingAccounts([
     { pubkey: allowancePda, isSigner: false, isWritable: true },
@@ -172,15 +172,15 @@ await program.methods
 
 ### On-Chain Verification
 
-Prize withdrawal requires on-chain verification of the decryption proof:
+Winnings withdrawal requires on-chain verification of the decryption proof:
 
 ```typescript
-const result = await decrypt([prizeHandle], {...});
+const result = await decrypt([winningsHandle], {...});
 
-// Build transaction with Ed25519 signature + withdraw instruction
+// Build transaction with Ed25519 signature + claim instruction
 const tx = new Transaction();
 result.ed25519Instructions.forEach(ix => tx.add(ix));
-tx.add(withdrawInstruction);
+tx.add(claimInstruction);
 ```
 
 ## Dependencies
