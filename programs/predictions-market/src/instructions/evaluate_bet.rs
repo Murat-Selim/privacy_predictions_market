@@ -60,6 +60,7 @@ pub fn handle_evaluate_bet<'info>(ctx: Context<'_, '_, '_, 'info, EvaluateBet<'i
     )?;
 
     bet.is_winner_handle = is_winner.0;
+    msg!("Result handle: {}", is_winner.0);
 
     // Allow bet owner to decrypt the result
     if ctx.remaining_accounts.len() >= 2 {

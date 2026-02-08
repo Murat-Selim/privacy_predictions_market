@@ -7,7 +7,7 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-range_prediction_market = "GVuxc87ispNtvPuePDUCfxQzxbDoTzsw5iVttBqWpF85"
+range_prediction_market = "7gp1d94Y7VtTd7rUEExAYhMuBJhVksAW72bY61FoUtfC"
 
 [registry]
 url = "https://api.apr.dev"

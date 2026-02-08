@@ -4,8 +4,7 @@ use anchor_lang::prelude::*;
 #[account]
 pub struct Market {
     pub authority: Pubkey,
-    pub mint: Pubkey,
-    pub price_feed: Pubkey,            // Pyth price feed account
+    pub price_feed: Pubkey,            // Pyth PriceUpdateV2 account (push feed)
     pub asset_symbol: String,         // "BTC" or "SOL"
     pub start_timestamp: i64,
     pub end_timestamp: i64,
@@ -17,7 +16,7 @@ pub struct Market {
 }
 
 impl Market {
-    pub const SIZE: usize = 8 + 32 + 32 + 32 + (4 + 10) + 8 + 8 + 1 + 16 + 4 + 1 + 1; // Added 32 for price_feed
+    pub const SIZE: usize = 8 + 32 + 32 + (4 + 10) + 8 + 8 + 1 + 16 + 4 + 1 + 1; // Added 32 for price_feed
 }
 
 /// Bet account

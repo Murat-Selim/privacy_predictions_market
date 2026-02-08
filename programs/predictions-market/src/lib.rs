@@ -9,7 +9,7 @@ pub mod state;
 
 use instructions::*;
 
-declare_id!("GVuxc87ispNtvPuePDUCfxQzxbDoTzsw5iVttBqWpF85");
+declare_id!("7gp1d94Y7VtTd7rUEExAYhMuBJhVksAW72bY61FoUtfC");
 
 #[program]
 pub mod range_prediction_market {

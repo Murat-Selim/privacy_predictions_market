@@ -1,21 +1,21 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Space_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Wallet } from "@/components/wallet-provider";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const spaceGrotesk = Space_Grotesk({
+  variable: "--font-space-grotesk",
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const jetBrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
   title: "Confidential Market",
-  description: "Private Range Price Prediction Market - powered by Inco",
+  description: "Private range prediction markets with encrypted computation.",
 };
 
 export default function RootLayout({
@@ -26,7 +26,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-[#0a0a0b] text-white font-sans`}
+        className={`${spaceGrotesk.variable} ${jetBrainsMono.variable} antialiased min-h-screen text-[color:var(--foreground)] font-sans`}
       >
         <Wallet>{children}</Wallet>
       </body>

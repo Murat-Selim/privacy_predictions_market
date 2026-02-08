@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, Transfer};
+use anchor_lang::system_program::{self, Transfer};
 use inco_lightning::{
     cpi::{self, accounts::VerifySignature},
     program::IncoLightning,
@@ -24,16 +24,13 @@ pub struct ClaimPrize<'info> {
         seeds = [b"vault", market.key().as_ref()], 
         bump
     )]
-    pub vault: Account<'info, TokenAccount>,
-
-    #[account(mut)]
-    pub winner_token_account: Account<'info, TokenAccount>,
+    /// CHECK: Vault is a PDA owned by the System Program; validated via seeds + bump.
+    pub vault: UncheckedAccount<'info>,
 
     /// CHECK: Instructions sysvar
     #[account(address = anchor_lang::solana_program::sysvar::instructions::ID)]
     pub instructions: AccountInfo<'info>,
 
-    pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 
     #[account(address = INCO_LIGHTNING_ID)]
@@ -78,7 +75,7 @@ pub fn handle_claim_prize(
     // Here we'll just transfer whatever is in the vault if it's the first winner, 
     // or a portion. To keep it simple like the raffle, first winner takes all or we can just msg.
     
-    let prize = ctx.accounts.vault.amount;
+    let prize = ctx.accounts.vault.to_account_info().lamports();
     if prize > 0 {
         let market_key = market.key();
         let vault_seeds: &[&[u8]] = &[
@@ -90,14 +87,13 @@ pub fn handle_claim_prize(
 
         let cpi_accounts = Transfer {
             from: ctx.accounts.vault.to_account_info(),
-            to: ctx.accounts.winner_token_account.to_account_info(),
-            authority: ctx.accounts.vault.to_account_info(),
+            to: ctx.accounts.winner.to_account_info(),
         };
-        let cpi_program = ctx.accounts.token_program.to_account_info();
+        let cpi_program = ctx.accounts.system_program.to_account_info();
         let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
-        token::transfer(cpi_ctx, prize)?;
+        system_program::transfer(cpi_ctx, prize)?;
 
-        msg!("Prize claimed: {} tokens", prize);
+        msg!("Prize claimed: {} lamports", prize);
     }
 
     Ok(())

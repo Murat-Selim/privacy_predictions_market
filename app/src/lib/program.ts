@@ -3,7 +3,7 @@ import { Connection, PublicKey, SystemProgram } from "@solana/web3.js";
 
 // Program ID from the deployed contract
 export const PROGRAM_ID = new PublicKey(
-  "GVuxc87ispNtvPuePDUCfxQzxbDoTzsw5iVttBqWpF85"
+  "7gp1d94Y7VtTd7rUEExAYhMuBJhVksAW72bY61FoUtfC"
 );
 
 // Inco Lightning Program ID
@@ -80,7 +80,7 @@ export function plaintextToBuffer(plaintext: string): Buffer {
 // Market account type
 export interface MarketAccount {
   authority: PublicKey;
-  mint: PublicKey;
+  priceFeed: PublicKey;
   assetSymbol: string;
   startTimestamp: BN;
   endTimestamp: BN;

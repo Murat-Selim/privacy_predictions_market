@@ -38,19 +38,19 @@ const emptySubscribe = () => () => {};
 // Loading skeleton while wallet provider initializes
 function LoadingSkeleton() {
   return (
-    <main className="pt-32 px-8 pb-20 max-w-6xl mx-auto">
+    <main className="pt-28 px-6 md:px-10 pb-20 max-w-6xl mx-auto">
       <div className="animate-pulse">
-        <div className="h-16 bg-white/5 rounded w-1/2 mb-6" />
-        <div className="h-6 bg-white/5 rounded w-1/3 mb-16" />
+        <div className="h-14 bg-white/5 rounded-2xl w-1/2 mb-6" />
+        <div className="h-6 bg-white/5 rounded-xl w-1/3 mb-12" />
         <div className="grid gap-4 md:grid-cols-2">
           {[1, 2].map((i) => (
             <div
               key={i}
-              className="bg-white/[0.02] border border-white/5 rounded-2xl p-6"
+              className="bg-white/[0.03] border border-white/10 rounded-3xl p-6"
             >
-              <div className="h-6 bg-white/5 rounded w-1/3 mb-4" />
+              <div className="h-5 bg-white/5 rounded w-1/3 mb-4" />
               <div className="h-4 bg-white/5 rounded w-2/3 mb-6" />
-              <div className="h-8 bg-white/5 rounded w-1/4" />
+              <div className="h-9 bg-white/5 rounded-full w-1/4" />
             </div>
           ))}
         </div>

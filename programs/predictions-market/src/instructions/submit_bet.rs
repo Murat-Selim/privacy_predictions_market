@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, Transfer};
+use anchor_lang::system_program::{self, Transfer};
 use inco_lightning::{
     cpi::{self, accounts::Operation},
     program::IncoLightning,
@@ -27,16 +27,13 @@ pub struct SubmitBet<'info> {
     pub bet: Account<'info, Bet>,
 
     #[account(
-        mut, 
-        seeds = [b"vault", market.key().as_ref()], 
+        mut,
+        seeds = [b"vault", market.key().as_ref()],
         bump
     )]
-    pub vault: Account<'info, TokenAccount>,
+    /// CHECK: Vault is a PDA owned by the System Program; validated via seeds + bump.
+    pub vault: UncheckedAccount<'info>,
 
-    #[account(mut)]
-    pub buyer_token_account: Account<'info, TokenAccount>,
-
-    pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 
     #[account(address = INCO_LIGHTNING_ID)]
@@ -84,18 +81,17 @@ pub fn handle_submit_bet<'info>(
     bet.amount_handle = amount_handle.0;
     bet.bump = ctx.bumps.bet;
 
-    // Transfer USDC to vault
+    // Transfer SOL (lamports) to vault
     let cpi_accounts = Transfer {
-        from: ctx.accounts.buyer_token_account.to_account_info(),
+        from: ctx.accounts.buyer.to_account_info(),
         to: ctx.accounts.vault.to_account_info(),
-        authority: ctx.accounts.buyer.to_account_info(),
     };
-    let cpi_program = ctx.accounts.token_program.to_account_info();
+    let cpi_program = ctx.accounts.system_program.to_account_info();
     let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
-    token::transfer(cpi_ctx, amount)?;
+    system_program::transfer(cpi_ctx, amount)?;
 
     market.participant_count += 1;
 
-    msg!("Bet submitted with {} tokens!", amount);
+    msg!("Bet submitted with {} lamports!", amount);
     Ok(())
 }

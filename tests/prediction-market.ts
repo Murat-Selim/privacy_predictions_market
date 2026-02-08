@@ -1,38 +1,41 @@
 import anchor from "@coral-xyz/anchor";
-// import { Program } from "@coral-xyz/anchor";
-import { PublicKey, Keypair, SystemProgram, Connection, Transaction } from "@solana/web3.js";
-import {
-  TOKEN_PROGRAM_ID,
-  NATIVE_MINT,
-  createAssociatedTokenAccountIdempotentInstruction,
-  getAssociatedTokenAddress,
-  createSyncNativeInstruction
-} from "@solana/spl-token";
-import nacl from "tweetnacl";
+import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
+const PUSH_ORACLE_PROGRAM_ID = new PublicKey(
+  "pythWSnswVUd12oZpeFP8e9CVaEqJg25g1Vtc2biRsT"
+);
+
+function getPriceFeedAccountAddress(shardId: number, feedId: string): PublicKey {
+  const hex = feedId.startsWith("0x") ? feedId.slice(2) : feedId;
+  const feedIdBytes = Buffer.from(hex, "hex");
+  if (feedIdBytes.length !== 32) {
+    throw new Error("Feed ID should be 32 bytes long");
+  }
+  const shardBuffer = Buffer.alloc(2);
+  shardBuffer.writeUInt16LE(shardId, 0);
+  return PublicKey.findProgramAddressSync(
+    [shardBuffer, feedIdBytes],
+    PUSH_ORACLE_PROGRAM_ID
+  )[0];
+}
 import { encryptValue } from "@inco/solana-sdk/encryption";
-import { decrypt } from "@inco/solana-sdk/attested-decrypt";
 import { hexToBuffer } from "@inco/solana-sdk/utils";
 import * as fs from "fs";
 const idl = JSON.parse(fs.readFileSync("./app/src/lib/idl.json", "utf8"));
 
-const INCO_LIGHTNING_PROGRAM_ID = new PublicKey("5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj");
-const PRICE_FEED_BTC = new PublicKey("Hov6Q8D2yYv7LEmS6HnK1aym8M65v7Cg7eYGu2S12q94"); // Pyth BTC/USD Devnet
+const BTC_USD_FEED_ID =
+  "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43";
 
 describe("prediction-market", () => {
-  // Use local test environment for testing
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
 
-  // Use the actual program ID from Anchor.toml
-  const programId = new PublicKey("GVuxc87ispNtvPuePDUCfxQzxbDoTzsw5iVttBqWpF85");
-  const program = new anchor.Program(idl as any, provider) as any;
+  const program = new anchor.Program(idl as any, provider);
+
   let wallet: Keypair;
 
-  // Use a random symbol ensures we test a Fresh Market every time
-  const ASSET_SYMBOL = `BTC-${Math.floor(Date.now())}`;
+  const ASSET_SYMBOL = `BTC${Date.now() % 100000}`;  // Keep under 10 chars
   const START_TIMESTAMP = Math.floor(Date.now() / 1000);
 
-  // Bet details
   const MIN_PRICE = 50000;
   const MAX_PRICE = 60000;
   // 0.0001 SOL = 100,000 lamports
@@ -41,12 +44,20 @@ describe("prediction-market", () => {
   let marketPda: PublicKey;
   let vaultPda: PublicKey;
   let betPda: PublicKey;
-  let buyerTokenAccount: PublicKey;
-
+  let priceFeedBtc: PublicKey;
   before(async () => {
     wallet = (provider.wallet as any).payer as Keypair;
+    const minBalance = 2 * anchor.web3.LAMPORTS_PER_SOL;
+    const currentBalance = await provider.connection.getBalance(wallet.publicKey);
+    if (currentBalance < minBalance) {
+      const sig = await provider.connection.requestAirdrop(
+        wallet.publicKey,
+        minBalance - currentBalance
+      );
+      await provider.connection.confirmTransaction(sig, "confirmed");
+      console.log("Airdropped SOL for tests:", sig);
+    }
 
-    // Create PDAs
     [marketPda] = PublicKey.findProgramAddressSync(
       [Buffer.from("market"), wallet.publicKey.toBuffer(), Buffer.from(ASSET_SYMBOL)],
       program.programId
@@ -63,41 +74,10 @@ describe("prediction-market", () => {
     console.log("Using Asset Symbol:", ASSET_SYMBOL);
     console.log("Market PDA:", marketPda.toBase58());
 
-    // 1. Ensure user has a WSOL account
-    buyerTokenAccount = await getAssociatedTokenAddress(
-      NATIVE_MINT,
-      wallet.publicKey
-    );
+    priceFeedBtc = getPriceFeedAccountAddress(0, BTC_USD_FEED_ID);
+    console.log("BTC/USD Price Feed (Pyth Push):", priceFeedBtc.toBase58());
 
-    console.log("Buyer Token Account (WSOL):", buyerTokenAccount.toBase58());
-
-    // 2. Wrap SOL for betting
-    // We will wrap 0.01 SOL to be safe (10,000,000 lamports)
-    // Wallet has ~0.45 SOL
-    const wrapAmount = 10_000_000;
-
-    try {
-      const tx = new Transaction().add(
-        createAssociatedTokenAccountIdempotentInstruction(
-          wallet.publicKey,
-          buyerTokenAccount,
-          wallet.publicKey,
-          NATIVE_MINT
-        ),
-        SystemProgram.transfer({
-          fromPubkey: wallet.publicKey,
-          toPubkey: buyerTokenAccount,
-          lamports: wrapAmount
-        }),
-        createSyncNativeInstruction(buyerTokenAccount)
-      );
-
-      const sig = await provider.sendAndConfirm(tx, []);
-      console.log("Wrapped SOL for betting:", sig);
-    } catch (err) {
-      console.error("Error wrapping SOL:", err);
-      throw err;
-    }
+    console.log("Using native SOL transfers (no WSOL wrapping).");
   });
 
   it("1. Initialize Market", async () => {
@@ -105,13 +85,10 @@ describe("prediction-market", () => {
       .initializeMarket(ASSET_SYMBOL, new anchor.BN(START_TIMESTAMP))
       .accounts({
         authority: wallet.publicKey,
-        mint: NATIVE_MINT,
         market: marketPda,
         vault: vaultPda,
-        tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
-        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-        priceFeed: PRICE_FEED_BTC
+        priceFeed: priceFeedBtc
       } as any)
       .rpc();
     console.log("Market initialized!");
@@ -134,8 +111,6 @@ describe("prediction-market", () => {
         market: marketPda,
         bet: betPda,
         vault: vaultPda,
-        buyerTokenAccount: buyerTokenAccount,
-        tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       } as any)
       .rpc();

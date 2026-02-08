@@ -13,7 +13,7 @@ export function TxLink({ txHash }: TxLinkProps) {
       href={explorerUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-center gap-2 text-[#3673F5] hover:text-[#3673F5]/80 transition-colors"
+      className="inline-flex items-center gap-2 text-[#2dd4bf] hover:text-[#2dd4bf]/80 transition-colors"
     >
       <span className="font-mono text-xs">{shortHash}</span>
       <svg
@@ -53,7 +53,7 @@ export function TxStatus({
           ? "bg-red-500/10 border border-red-500/20 text-red-400"
           : isSuccess
           ? "bg-green-500/10 border border-green-500/20 text-green-400"
-          : "bg-[#3673F5]/10 border border-[#3673F5]/20 text-[#3673F5]"
+          : "bg-[#2dd4bf]/10 border border-[#2dd4bf]/20 text-[#2dd4bf]"
       }`}
     >
       <div className="flex items-center justify-between gap-4">
